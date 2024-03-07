@@ -15,7 +15,7 @@ class Menu:
         self.focus = 1
         self.viewport = None
         self.active = False
-
+        self.oldfocus = 0
     # Chunk the options to only render the ones in the viewport
     def _chunk_options(self):
         for i in range(0, len(self.options), self.lines):
@@ -29,13 +29,14 @@ class Menu:
     # Or when navigating to a submenu or parten
     def start(self, lcd):
         self.lcd = lcd  # Assign the LCD to the menu.
-        self.columns = lcd.num_columns  # Get the columns of the LCD
-        self.lines = lcd.num_lines  # And the line
+        self.columns = lcd.cols  # Get the columns of the LCD
+        self.lines = lcd.rows  # And the line
         self.active = True  # Set the screen as active
 
         # Chunk the list and calculate the viewport:
         self.options_chunked = list(self._chunk_options())
         self.render()
+        self._render_cursor()
         return self
 
     # Renders the menu, also when refreshing (when changing select)
@@ -45,29 +46,33 @@ class Menu:
             return
 
         self.viewport = self.options_chunked[self._current_chunk()]
-
         self.lcd.clear()
-        self.lcd.move_to(0, 0)
+        self.lcd.set_cursor(0, 0)
 
-        self._render_cursor()
+        #self._render_cursor()
         self._render_options()
 
     def _render_cursor(self):
-        for l in range(0, self.lines):
-            self.lcd.move_to(l, 0)
-            # If the current position matches the focus, render
-            # the cursor otherwise, render an empty space
-            if l == (self.focus - 1):
-                self.lcd.putstr(">")
+        # Calculate the starting index based on focus position and number of lines
+        start_index = (self.focus - 1) % len(self.options)
+
+        # Render the cursor:
+        for l in range(self.lines):
+            option_index = (start_index + l) % len(self.options)
+
+            self.lcd.set_cursor(19, l)
+            # If the current position matches the focus, render the cursor
+            if l == (self.focus - 1) % self.lines:
+                self.lcd.print("<")
             else:
-                self.lcd.putstr(" ")
+                self.lcd.print(" ")
 
     def _render_options(self):
         # Render the options:
         for l, option in enumerate(self.viewport):
-            self.lcd.move_to(l, 0)  # Move to the line
+            self.lcd.set_cursor(0, l)  # Move to the line
             # And render the longest possible string on the screen
-            self.lcd.putstr(option.title[: self.columns - 1])
+            self.lcd.print(option.title[: self.columns - 1])
 
     # Add an option to the menu (could be an action or submenu)
     def add_option(self, option):
@@ -77,25 +82,49 @@ class Menu:
             )
         self.options.append(option)
 
+
+   # Function that checks if it needs to load a new menu
+    def CheckIfUpdateMenu(self):
+        #Old_dec = float(self.oldfocus / self.lines) % 1 # calculate old num decimal and only keep the decimals
+        #New_dec = float(self.focus / self.lines) % 1 # calculate new num decimal and only keep the decimals
+        #Steps = 1 / self.lines # calculate the steps
+        Old_dec = float(self.oldfocus / len(self.viewport)) % 1 # calculate old num decimal and only keep the decimals
+        New_dec = float(self.focus / len(self.viewport)) % 1 # calculate new num decimal and only keep the decimals
+        Steps = 1 / len(self.viewport) # calculate the steps
+        if Old_dec == 0.0 and New_dec == Steps or Old_dec == Steps and New_dec == 0.0:
+            return True
+        else:
+            return False
+
     # Focus on the next option in the menu
     def focus_next(self):
+        self.oldfocus = self.focus
         self.focus += 1
         # Wrap around
         if self.focus > len(self.options):
             self.focus = 1
-        self.render()
+        if self.CheckIfUpdateMenu():
+            self.render()
+        self._render_cursor()
 
     # Focus on the previous option in the menu
     def focus_prev(self):
+        self.oldfocus = self.focus
         self.focus -= 1
         if self.focus < 1:
             self.focus = len(self.options)
-        self.render()
+        if self.CheckIfUpdateMenu():
+            self.render()
+        self._render_cursor()
+            
 
     # Focus on the option n in the menu
     def focus_set(self, n):
+        self.oldfocus = self.focus
         self.focus = n
-        self.render()
+        if self.CheckIfUpdateMenu():
+            self.render()
+        self._render_cursor()
 
     # Choose the item on which the focus is applied
     def choose(self):
@@ -122,12 +151,12 @@ class Menu:
 
 
 class MenuAction:
-    def __init__(self, title, callback):
+    def __init__(self, title, callback, value=None):
         self.title = title
         self.callback = callback
-
+        self.value = value
     def cb(self):
-        return self.callback()
+        return self.callback(self.value)
 
 
 class MenuNoop:
